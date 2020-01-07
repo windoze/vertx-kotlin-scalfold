@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+    <data-source source="LOCAL" name="dppoc@dppoc.database.windows.net" uuid="1524ceec-abf5-4c1d-ba39-ffd1b3700c85">
+      <driver-ref>azure.ms</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>com.microsoft.sqlserver.jdbc.SQLServerDriver</jdbc-driver>
+      <jdbc-url>jdbc:sqlserver://dppoc.database.windows.net:1433;database=dppoc</jdbc-url>
+    </data-source>
+    <data-source source="LOCAL" name="demand-system-prod@demand-system-prod.database.windows.net" uuid="307a6f07-6d47-4234-8eda-a14e66bc2082">
+      <driver-ref>azure.ms</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>com.microsoft.sqlserver.jdbc.SQLServerDriver</jdbc-driver>
+      <jdbc-url>jdbc:sqlserver://demand-system-prod.database.windows.net:1433;database=demand-system-prod</jdbc-url>
+    </data-source>
+  </component>
+</project>

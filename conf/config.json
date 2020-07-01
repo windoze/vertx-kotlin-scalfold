@@ -1,2 +1,12 @@
 {
+  "auth": {
+    "users": {
+      "abc": "123"
+    }
+  },
+  "aadauth": {
+    "tenantId": "<YOU-AAD-TENANT-ID>",
+    "appId": "<YOU-AAD-APP-ID>",
+    "secret": "<YOU-AAD-APP-SECRET>"
+  }
 }

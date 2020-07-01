@@ -3,7 +3,6 @@
 package codes.unwritten.common
 
 import com.fasterxml.jackson.core.type.TypeReference
-//import com.fasterxml.jackson.module.kotlin.convertValue
 import io.vertx.core.*
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.eventbus.Message
@@ -32,22 +31,14 @@ import net.logstash.logback.argument.StructuredArgument
 import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
-/**
- * Some common stuffs
- */
-
-val CLEAR_RE = Regex(pattern = "[^\\p{L}\\p{Digit}-]+")
-
-/**
- * Clear the input string, remove all characters other than letters(include CJK) and digits and dash ('-')
- */
-fun clear(s: String) = CLEAR_RE.replace(s.trim().toLowerCase(), "")
+import kotlin.reflect.KClass
+import kotlin.reflect.KFunction
+import kotlin.reflect.KParameter
 
 /**
  * Convert any object into JSON string
  */
-fun Any.stringify(): String = Json.encode(this)
+fun Any?.stringify(): String = Json.encode(this)
 
 /**
  * State a coroutine in a CoroutineVerticle
@@ -146,6 +137,12 @@ open class VertxWebException(message: String, val statusCode: Int = 500, vararg 
 class BadRequestException(message: String = "Bad Request", vararg args: StructuredArgument) :
     VertxWebException(message, 400, *args)
 
+class UnauthorizedException(message: String = "Unauthorized", val schema: String, val realm: String, vararg args: StructuredArgument) :
+    VertxWebException(message, 401, *args)
+
+class ForbiddenException(message: String = "Forbidden", vararg args: StructuredArgument) :
+    VertxWebException(message, 403, *args)
+
 class NotFoundException(message: String = "Not Found", vararg args: StructuredArgument) :
     VertxWebException(message, 404, *args)
 
@@ -172,8 +169,10 @@ fun <T> CoroutineScope.promiseHandler(h: suspend () -> T): Handler<Promise<T>> {
 open class CoroutineWebVerticle : CoroutineVerticle() {
     @Transient
     val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
     @Transient
     lateinit var server: HttpServer
+
     @Transient
     lateinit var router: Router
 
@@ -224,7 +223,7 @@ open class CoroutineWebVerticle : CoroutineVerticle() {
                 } catch (e: VertxWebException) {
                     it.response().setStatusCode(e.statusCode).setStatusMessage(e.message).end()
                 } catch (e: Throwable) {
-                    it.response().internalError(e.message ?: "")
+                    it.response().internalError(e.message ?: "Internal error")
                 }
             }
         }
@@ -256,3 +255,22 @@ suspend inline fun <T : SuspendCloseable, R> T.use(block: (T) -> R): R {
         }
     }
 }
+
+inline fun <reified T : Annotation> KClass<*>.getAnnotation(ann: KClass<T>): T? {
+    return annotations.firstOrNull {
+        it is T
+    } as? T
+}
+
+inline fun <reified T : Annotation> KParameter.getAnnotation(ann: KClass<T>): T? {
+    return annotations.firstOrNull {
+        it is T
+    } as? T
+}
+
+inline fun <reified T : Annotation> KFunction<*>.getAnnotation(ann: KClass<T>): T? {
+    return annotations.firstOrNull {
+        it is T
+    } as? T
+}
+

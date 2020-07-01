@@ -1,29 +1,76 @@
 package codes.unwritten.scalfold
 
 import ch.qos.logback.classic.Level
-import codes.unwritten.common.CoroutineWebVerticle
-import codes.unwritten.common.deploy
+import codes.unwritten.common.*
 import com.fasterxml.jackson.annotation.JsonAutoDetect
 import com.fasterxml.jackson.annotation.PropertyAccessor
 import com.xenomachina.argparser.ArgParser
 import com.xenomachina.argparser.default
 import com.xenomachina.argparser.mainBody
 import io.vertx.core.Vertx
+import io.vertx.core.http.HttpMethod
 import io.vertx.core.json.JsonObject
 import io.vertx.core.json.jackson.DatabindCodec
 import io.vertx.core.logging.LoggerFactory.LOGGER_DELEGATE_FACTORY_CLASS_NAME
 import io.vertx.core.logging.SLF4JLogDelegateFactory
+import io.vertx.ext.web.RoutingContext
 import net.logstash.logback.argument.StructuredArguments.keyValue
 import org.slf4j.LoggerFactory
 
-class MainVerticle : CoroutineWebVerticle() {
+@Auth(AADAuth::class, configKey = "aadauth")
+class MainVerticle : WebVerticle() {
     override suspend fun start() {
         super.start()
 
-        val port = config.getInteger("http.port", 8080)
+        val port = System.getenv("HTTP_PLATFORM_PORT")?.toInt() ?: config.getInteger("http.port", 8080)
         server.requestHandler(router).listen(port)
 
         log.info("MainVerticle started listening on port $port.", keyValue("listening_port", port))
+    }
+
+    @Request(method = HttpMethod.GET, path = "/")
+    @Auth(NoAuth::class)
+    suspend fun index(): String {
+        return "OK"
+    }
+
+    @Request(method = HttpMethod.GET, path = "/hello")
+    @Auth(AADAuth::class)
+    suspend fun hello(user: AADUserPrincipal): String {
+        return "Hello, ${user.name}."
+    }
+
+    @Request(method = HttpMethod.GET, path = "/hello1/:user")
+    suspend fun hello1(@PathParam("user") user: String): String {
+        return "Hello1 $user"
+    }
+
+    @Request(method = HttpMethod.GET, path = "/hello2")
+    suspend fun hello2(@QueryParam("user") user: String): String {
+        return "Hello2 $user"
+    }
+
+    data class Param(val user: List<String> = listOf())
+
+    @Request(method = HttpMethod.POST, path = "/hello3")
+    suspend fun hello3(@FromBody param: Param): String {
+        return "Hello3 ${param.user.first()}"
+    }
+
+    @Request(method = HttpMethod.GET, path = "/hello4/:user")
+    suspend fun hello4(@PathParam("user") user: Int): String {
+        return "Hello4 $user"
+    }
+
+    @Request(method = HttpMethod.GET, path = "/hello5/:user")
+    suspend fun hello5(@PathParam("user") user: Int, ctx: RoutingContext): String {
+        return "Hello5 $user"
+    }
+
+    @Auth(BasicAuth::class, configKey = "auth")
+    @Request(method = HttpMethod.GET, path = "/hello6/:user")
+    suspend fun hello6(user: Int, p: BasicAuthUserPrincipal, ctx: RoutingContext): String {
+        return "Hello6 ${p.username} $user"
     }
 }
 

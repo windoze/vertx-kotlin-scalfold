@@ -28,19 +28,22 @@ class MainVerticle : WebVerticle() {
         log.info("MainVerticle started listening on port $port.", keyValue("listening_port", port))
     }
 
+    // Fallback to class auth
     @Request(method = HttpMethod.GET, path = "/")
-    @Auth(NoAuth::class)
     suspend fun index(): String {
         return "OK"
     }
 
+    // Explicit auth
     @Request(method = HttpMethod.GET, path = "/hello")
     @Auth(AADAuth::class)
     suspend fun hello(user: AADUserPrincipal): String {
         return "Hello, ${user.name}."
     }
 
+    // Explicit no auth
     @Request(method = HttpMethod.GET, path = "/hello1/:user")
+    @Auth(NoAuth::class)
     suspend fun hello1(@PathParam("user") user: String): String {
         return "Hello1 $user"
     }
@@ -67,6 +70,7 @@ class MainVerticle : WebVerticle() {
         return "Hello5 $user"
     }
 
+    // Different auth type
     @Auth(BasicAuth::class, configKey = "auth")
     @Request(method = HttpMethod.GET, path = "/hello6/:user")
     suspend fun hello6(user: Int, p: BasicAuthUserPrincipal, ctx: RoutingContext): String {

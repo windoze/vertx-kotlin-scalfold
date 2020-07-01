@@ -88,7 +88,7 @@ class AADAuth : AuthProvider {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
     @Transient
-    lateinit var vertx: Vertx
+    private lateinit var vertx: Vertx
     private val client by lazy { WebClient.create(vertx) }
 
     val authority: String = "https://login.microsoftonline.com/common"

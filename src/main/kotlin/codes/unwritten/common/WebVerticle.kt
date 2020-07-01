@@ -9,6 +9,7 @@ import io.vertx.ext.web.Router
 import io.vertx.ext.web.RoutingContext
 import kotlin.reflect.*
 import kotlin.reflect.full.*
+import kotlin.reflect.jvm.isAccessible
 import kotlin.reflect.jvm.jvmErasure
 
 open class WebVerticle : CoroutineWebVerticle() {
@@ -16,8 +17,11 @@ open class WebVerticle : CoroutineWebVerticle() {
         mutableMapOf(NoAuth::class to NoAuth())
 
     private fun setProperty(instance: Any, prop: KMutableProperty1<Any, Any?>, value: Any?) {
+        prop.isAccessible = true
         prop.set(instance, value)
     }
+
+    private var authProvider: AuthProvider? = null
 
     private suspend fun createAuthProvider(type: KClass<out AuthProvider>, configKey: String): AuthProvider {
         val auth = if (configKey.isNotBlank())
@@ -37,10 +41,18 @@ open class WebVerticle : CoroutineWebVerticle() {
         return auth
     }
 
+    private fun findAuthProvider(klass: KClass<out AuthProvider>): AuthProvider? {
+        return authProviders.toList().firstOrNull {
+            it.first.starProjectedType.isSubtypeOf(klass.starProjectedType)
+        }?.second
+    }
+
     override suspend fun start() {
         super.start()
         this::class.getAnnotation(Auth::class)?.let {
-            authProviders.putIfAbsent(it.providerType, createAuthProvider(it.providerType, it.configKey))
+            val provider = createAuthProvider(it.providerType, it.configKey)
+            authProviders.putIfAbsent(it.providerType, provider)
+            authProvider = provider
         }
         scanHandlers(router)
     }
@@ -78,7 +90,9 @@ open class WebVerticle : CoroutineWebVerticle() {
     }
 
     private suspend fun invokeHandler(context: RoutingContext, func: KFunction<*>): Any {
-        val authClass = (func.annotations.firstOrNull { it is Auth } as? Auth)?.providerType ?: NoAuth::class
+        val authClass =
+            (func.annotations.firstOrNull { it is Auth } as? Auth)?.providerType
+                ?: if (authProvider == null) NoAuth::class else authProvider!!::class
         val authProvider = authProviders[authClass] ?: throw ForbiddenException()
         val userPrincipal = authProvider.auth(context)
 

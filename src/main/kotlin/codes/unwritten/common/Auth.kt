@@ -12,9 +12,11 @@ import io.vertx.core.json.JsonArray
 import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
 import io.vertx.ext.web.client.WebClient
+import io.vertx.kotlin.core.json.jsonObjectOf
 import io.vertx.kotlin.coroutines.dispatcher
 import io.vertx.kotlin.ext.web.client.sendAwait
 import io.vertx.kotlin.ext.web.client.sendBufferAwait
+import io.vertx.kotlin.ext.web.client.sendJsonObjectAwait
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -75,21 +77,28 @@ class BasicAuth : AuthProvider {
     }
 }
 
+enum class AADUserPrincipalType {
+    USER,
+    APP
+}
+
 class AADUserPrincipal(
+    val type: AADUserPrincipalType,
     val name: String,
     val preferredUsername: String,
+    val appId: String,
     val issuedAt: Instant = Instant.EPOCH,
     val notBefore: Instant = Instant.EPOCH,
     val expiration: Instant = Instant.EPOCH
 ) : UserPrincipal
 
-class AADAuth : AuthProvider {
+open class AADAuth : AuthProvider {
     @Transient
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
     @Transient
-    private lateinit var vertx: Vertx
-    private val client by lazy { WebClient.create(vertx) }
+    protected lateinit var vertx: Vertx
+    protected val client by lazy { WebClient.create(vertx) }
 
     val authority: String = "https://login.microsoftonline.com/common"
     val audience: String = ""
@@ -97,11 +106,13 @@ class AADAuth : AuthProvider {
     val appId: String = ""
     val secret: String = ""
 
+    val appIdAllowedList: List<String> = listOf()
+
     @Transient
     private lateinit var keys: Map<String, RSAPublicKey>
 
     @Transient
-    private val tokenCache: LoadingCache<Int, Deferred<String>> = CacheBuilder.newBuilder()
+    protected val tokenCache: LoadingCache<Int, Deferred<String>> = CacheBuilder.newBuilder()
         .expireAfterWrite(30, TimeUnit.MINUTES)
         .build(object : CacheLoader<Int, Deferred<String>>() {
             override fun load(key: Int): Deferred<String> {
@@ -206,12 +217,32 @@ class AADAuth : AuthProvider {
 
             // Check if there is a username
             if (preferredUsername.isNullOrBlank()) {
-                throw ForbiddenException()
+                val appId = decoded.getString("appid", "")
+
+                // Check if there is an appId
+                if (appId.isBlank()) {
+                    throw ForbiddenException()
+                } else {
+                    // It's a AADApp principal
+                    if (appId.toLowerCase() in appIdAllowedList.map { it.toLowerCase() })
+                        return AADUserPrincipal(
+                            type = AADUserPrincipalType.APP,
+                            name = "",
+                            preferredUsername = "",
+                            appId = appId,
+                            issuedAt = issuedAt,
+                            notBefore = notBefore,
+                            expiration = expiration
+                        )
+                }
             }
 
+            // AAD User principal
             return AADUserPrincipal(
+                type = AADUserPrincipalType.USER,
                 name = decoded.getString("name", ""),
                 preferredUsername = preferredUsername,
+                appId = "",
                 issuedAt = issuedAt,
                 notBefore = notBefore,
                 expiration = expiration
@@ -220,5 +251,68 @@ class AADAuth : AuthProvider {
             log.warn(e.message)
             throw ForbiddenException()
         }
+    }
+}
+
+class AADSecurityGroupAuth : AADAuth() {
+    @Transient
+    private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
+    val securityGroups: List<String> = listOf()
+
+    @Transient
+    private lateinit var groups: JsonArray
+
+    val groupCache: LoadingCache<String, Deferred<List<String>>> = CacheBuilder.newBuilder()
+        .expireAfterWrite(10, TimeUnit.MINUTES)
+        .build(object : CacheLoader<String, Deferred<List<String>>>() {
+            override fun load(key: String): Deferred<List<String>> {
+                log.info("Checking user groups...")
+                return CoroutineScope(vertx.dispatcher()).async {
+                    val myToken = tokenCache[0].await()
+                    val resp = client.postAbs("https://graph.microsoft.com/v1.0/users/$key/checkMemberGroups")
+                        .putHeader("Authorization", "Bearer $myToken")
+                        .sendJsonObjectAwait(
+                            jsonObjectOf(
+                                "groupIds" to groups
+                            )
+                        )
+                    val body = resp.bodyAsJsonObject()
+                    body.getJsonArray("value").map { it.toString() }.toList()
+                }
+            }
+        })
+
+    override suspend fun init() {
+        super.init()
+        groups = JsonArray(securityGroups.map {
+            //https://graph.microsoft.com/v1.0/groups?$filter=displayName+eq+'XXX'&$select=id
+            val resp = client.getAbs("https://graph.microsoft.com/v1.0/groups")
+                .putHeader("authorization", tokenCache[0].await())
+                .addQueryParam("\$filter", "displayName eq '$it'")
+                .addQueryParam("\$select", "id")
+                .sendAwait()
+            val b = resp.bodyAsJsonObject()
+            if (!b.getJsonArray("value").isEmpty) {
+                b.getJsonArray("value").getJsonObject(0).getString("id")
+            } else ""
+        }.filter { it.isNotBlank() })
+    }
+
+    override suspend fun auth(context: RoutingContext): UserPrincipal {
+        val userPrincipal = super.auth(context) as AADUserPrincipal
+
+        // Security group is for users only
+        if (userPrincipal.type != AADUserPrincipalType.USER) {
+            throw ForbiddenException()
+        }
+
+        // Check is the user is in the security group
+        val groups = groupCache[userPrincipal.preferredUsername].await()
+        if (groups.isEmpty()) {
+            throw ForbiddenException()
+        }
+
+        return userPrincipal
     }
 }

@@ -34,8 +34,8 @@ interface UserPrincipal
 class Anonymous : UserPrincipal
 
 interface AuthProvider {
-    suspend fun auth(context: RoutingContext): UserPrincipal
     suspend fun init() {}
+    suspend fun auth(context: RoutingContext): UserPrincipal
 }
 
 class NoAuth : AuthProvider {

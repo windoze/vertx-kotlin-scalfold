@@ -17,6 +17,7 @@ import io.vertx.ext.web.RoutingContext
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+// Config key is used with the config from the WebVerticle which hosts this controller
 @Auth(AADAuth::class, configKey = "aadauth")
 class MainController {
     @Transient

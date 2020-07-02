@@ -29,21 +29,53 @@ import java.time.Instant
 import java.util.*
 import java.util.concurrent.TimeUnit
 
+/**
+ * Represent a user principal
+ */
 interface UserPrincipal
 
+/**
+ * User without explicit identity
+ */
 class Anonymous : UserPrincipal
 
+/**
+ * Provide auth function
+ */
 interface AuthProvider {
+    /**
+     * Init the auth provider
+     */
     suspend fun init() {}
+
+    /**
+     * Authenticate a request
+     * @param context the routing context which contains the request
+     * @return a user principal if auth succeeded
+     */
     suspend fun auth(context: RoutingContext): UserPrincipal
 }
 
+/**
+ * Dummy Auth provider, does nothing and always succeeds with an anonymous user principal returned
+ */
 class NoAuth : AuthProvider {
     override suspend fun auth(context: RoutingContext) = Anonymous()
 }
 
-class BasicAuthUserPrincipal(val username: String = "", val password: String = "") : UserPrincipal
+/**
+ * Basic Auth User Principal
+ * @param username User name extracted from HTTP Basic Auth header
+ * @param password Password extracted from HTTP Basic Auth header
+ */
+class BasicAuthUserPrincipal(
+    val username: String = "",
+    val password: String = ""
+) : UserPrincipal
 
+/**
+ * HTTP Basic Auth provider
+ */
 class BasicAuth : AuthProvider {
     interface UserPassStore {
         suspend fun verifyUser(user: BasicAuthUserPrincipal): Boolean
@@ -82,6 +114,16 @@ enum class AADUserPrincipalType {
     APP
 }
 
+/**
+ * AzureAD User Principal, can be an AAD user or an AAP Application
+ * @param type principal type
+ * @param name name of the AAD User, empty if it's an application principal
+ * @param preferredUsername user name of the AAD User, empty if it's an application principal
+ * @param appId AAD Application id, empty if it's an user principal
+ * @param issuedAt Time of the token was issued
+ * @param notBefore the token is not valid before this time
+ * @param expiration the token is expired after this time
+ */
 class AADUserPrincipal(
     val type: AADUserPrincipalType,
     val name: String,
@@ -92,6 +134,9 @@ class AADUserPrincipal(
     val expiration: Instant = Instant.EPOCH
 ) : UserPrincipal
 
+/**
+ * AAD Auth Provider
+ */
 open class AADAuth : AuthProvider {
     @Transient
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
@@ -254,6 +299,9 @@ open class AADAuth : AuthProvider {
     }
 }
 
+/**
+ * AAD Auth Provider with security group constraints, this provider only works with user, not for AAD app
+ */
 class AADSecurityGroupAuth : AADAuth() {
     @Transient
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)

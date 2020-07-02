@@ -9,6 +9,8 @@ import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.coroutines.dispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import kotlin.coroutines.CoroutineContext
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
@@ -17,6 +19,8 @@ import kotlin.reflect.full.*
 import kotlin.reflect.jvm.jvmErasure
 
 class RouteHandler(private val controller: Any, private val root: String) : CoroutineScope {
+    private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
     // Coroutine context from verticle
     override val coroutineContext: CoroutineContext by lazy { Vertx.currentContext().dispatcher() }
 
@@ -72,9 +76,7 @@ class RouteHandler(private val controller: Any, private val root: String) : Coro
 
     private suspend fun scanHandlers(router: Router) {
         val klass = controller::class
-        klass.memberFunctions.filter {
-            !it.returnType.isMarkedNullable
-        }.forEach { func ->
+        klass.memberFunctions.forEach { func ->
             func.getAnnotation(Auth::class)?.let {
                 authProviders.putIfAbsent(it.providerType, createAuthProvider(it.providerType, it.configKey))
             }
@@ -102,7 +104,7 @@ class RouteHandler(private val controller: Any, private val root: String) : Coro
         }
     }
 
-    private suspend fun invokeHandler(context: RoutingContext, func: KFunction<*>): Any {
+    private suspend fun invokeHandler(context: RoutingContext, func: KFunction<*>) {
         val authClass =
             (func.annotations.firstOrNull { it is Auth } as? Auth)?.providerType
                 ?: if (authProvider == null) NoAuth::class else authProvider!!::class
@@ -144,14 +146,33 @@ class RouteHandler(private val controller: Any, private val root: String) : Coro
                 }
             }
         }.toMap()
-        return func.callSuspendBy(paramMap)!!
+
+        if (func.returnType == Unit::class.starProjectedType) {
+            func.callSuspendBy(paramMap)
+            if (!context.response().ended()) {
+                log.warn("The response has not been ended by function '${func.name}'.")
+                context.response().setStatusCode(204).end()
+            }
+        } else {
+            val ret = func.callSuspendBy(paramMap)
+            if (ret == null) {
+                // 204 No content
+                context.response().setStatusCode(204).end()
+            } else {
+                if (context.response().ended()) {
+                    log.warn("The response has been ended by function '${func.name}', return value ignored.")
+                } else {
+                    context.response().endWith(ret)
+                }
+            }
+        }
     }
 
     private fun Route.coroHandler(handler: suspend (RoutingContext) -> Any) {
         handler {
             launch(coroutineContext) {
                 try {
-                    it.response().endWith(handler(it))
+                    handler(it)
                 } catch (e: VertxWebException) {
                     it.response().setStatusCode(e.statusCode).setStatusMessage(e.message).end()
                 } catch (e: Throwable) {

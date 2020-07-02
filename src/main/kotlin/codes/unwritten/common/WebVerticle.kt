@@ -4,6 +4,8 @@ import net.logstash.logback.argument.StructuredArguments
 
 /**
  * Verticle to host controllers
+ * It will inject `config` and `vertx` properties into controllers if these properties exist and have the correct types.
+ * It will also inject `vertx` into AuthProviders used by controllers.
  * @param portKey the config key to get the listening port
  */
 open class WebVerticle(portKey: String = "") : CoroutineWebVerticle() {

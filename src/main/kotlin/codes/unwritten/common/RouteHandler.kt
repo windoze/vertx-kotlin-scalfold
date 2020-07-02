@@ -84,6 +84,26 @@ class RouteHandler(private val controller: Any, private val root: String) : Coro
                 router.route(it.method, it.path).coroHandler { context ->
                     invokeHandler(context, func)
                 }
+            } ?: func.getAnnotation(GET::class)?.let {
+                router.get(it.path).coroHandler { context ->
+                    invokeHandler(context, func)
+                }
+            } ?: func.getAnnotation(PUT::class)?.let {
+                router.put(it.path).coroHandler { context ->
+                    invokeHandler(context, func)
+                }
+            } ?: func.getAnnotation(POST::class)?.let {
+                router.post(it.path).coroHandler { context ->
+                    invokeHandler(context, func)
+                }
+            } ?: func.getAnnotation(DELETE::class)?.let {
+                router.delete(it.path).coroHandler { context ->
+                    invokeHandler(context, func)
+                }
+            } ?: func.getAnnotation(PATCH::class)?.let {
+                router.patch(it.path).coroHandler { context ->
+                    invokeHandler(context, func)
+                }
             }
         }
     }

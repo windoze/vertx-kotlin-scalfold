@@ -12,6 +12,41 @@ import kotlin.reflect.KClass
 annotation class Request(val method: HttpMethod, val path: String)
 
 /**
+ * The function is GET handler
+ * @param method The path of this function to handle
+ */
+@Target(AnnotationTarget.FUNCTION)
+annotation class GET(val path: String)
+
+/**
+ * The function is PUT handler
+ * @param method The path of this function to handle
+ */
+@Target(AnnotationTarget.FUNCTION)
+annotation class PUT(val path: String)
+
+/**
+ * The function is POST handler
+ * @param method The path of this function to handle
+ */
+@Target(AnnotationTarget.FUNCTION)
+annotation class POST(val path: String)
+
+/**
+ * The function is DELETE handler
+ * @param method The path of this function to handle
+ */
+@Target(AnnotationTarget.FUNCTION)
+annotation class DELETE(val path: String)
+
+/**
+ * The function is PATCH handler
+ * @param method The path of this function to handle
+ */
+@Target(AnnotationTarget.FUNCTION)
+annotation class PATCH(val path: String)
+
+/**
  * The param is taken from path
  * @param name the name of the path parameter
  */

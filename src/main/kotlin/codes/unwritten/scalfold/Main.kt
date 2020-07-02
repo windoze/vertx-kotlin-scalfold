@@ -8,19 +8,16 @@ import com.xenomachina.argparser.ArgParser
 import com.xenomachina.argparser.default
 import com.xenomachina.argparser.mainBody
 import io.vertx.core.Vertx
-import io.vertx.core.buffer.Buffer
 import io.vertx.core.http.HttpMethod
 import io.vertx.core.json.JsonObject
 import io.vertx.core.json.jackson.DatabindCodec
 import io.vertx.core.logging.LoggerFactory.LOGGER_DELEGATE_FACTORY_CLASS_NAME
 import io.vertx.core.logging.SLF4JLogDelegateFactory
 import io.vertx.ext.web.RoutingContext
-import io.vertx.ext.web.client.HttpResponse
 import io.vertx.ext.web.client.WebClient
 import io.vertx.kotlin.ext.web.client.sendAwait
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.nio.charset.Charset
 
 // Config key is used with the config from the WebVerticle which hosts this controller
 @Auth(AADAuth::class, configKey = "aadauth")
@@ -40,7 +37,7 @@ class MainController {
     }
 
     // Explicit auth, user info taken from injected AADUserPrincipal param
-    @Request(method = HttpMethod.GET, path = "/hello")
+    @GET(path = "/hello")
     @Auth(AADAuth::class)
     suspend fun hello(user: AADUserPrincipal): String {
         return "Hello, ${user.name}."
@@ -48,14 +45,14 @@ class MainController {
 
     // Path param
     // Explicit no auth
-    @Request(method = HttpMethod.GET, path = "/hello1/:user")
+    @GET("/hello1/:user")
     @Auth(NoAuth::class)
     suspend fun hello1(@PathParam("user") user: String): String {
         return "Hello1 $user"
     }
 
     // Query param
-    @Request(method = HttpMethod.GET, path = "/hello2")
+    @GET("/hello2")
     suspend fun hello2(@QueryParam("user") user: String): String {
         return "Hello2 $user"
     }
@@ -63,20 +60,21 @@ class MainController {
     data class Param(val user: List<String> = listOf())
 
     // Request body
-    @Request(method = HttpMethod.POST, path = "/hello3")
+    @POST("/hello3")
+    @Auth(NoAuth::class)
     suspend fun hello3(@FromBody param: Param): String {
         return "Hello3 ${param.user.first()}"
     }
 
     // Type conversion
-    @Request(method = HttpMethod.GET, path = "/hello4/:user")
+    @GET("/hello4/:user")
     suspend fun hello4(@PathParam("user") user: Int): String {
         return "Hello4 $user"
     }
 
     // Different auth type
     @Auth(BasicAuth::class, configKey = "auth")
-    @Request(method = HttpMethod.GET, path = "/hello5/:user")
+    @GET("/hello5/:user")
     suspend fun hello5(user: Int, p: BasicAuthUserPrincipal, ctx: RoutingContext): String {
         return "Hello5 ${p.username} $user"
     }
@@ -92,19 +90,19 @@ class WorldController {
     }
 
     // URL is "/w/world/xxx"
-    @Request(method = HttpMethod.GET, path = "/world/:user")
+    @GET("/world/:user")
     suspend fun world(@PathParam("user") user: String): String {
         return "World $user"
     }
 
     // 204 response
-    @Request(method = HttpMethod.GET, path = "/null")
+    @GET("/null")
     suspend fun nll(): String? {
         return null
     }
 
     // Handle the response directly, w/o return value
-    @Request(method = HttpMethod.GET, path = "/e")
+    @GET("/e")
     suspend fun g(context: RoutingContext) {
         val resp = client.getAbs("http://example.com/").sendAwait()
         resp.headers().forEach {

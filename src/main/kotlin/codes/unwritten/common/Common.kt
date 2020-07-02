@@ -31,9 +31,11 @@ import net.logstash.logback.argument.StructuredArgument
 import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import kotlin.reflect.KClass
-import kotlin.reflect.KFunction
-import kotlin.reflect.KParameter
+import kotlin.reflect.*
+import kotlin.reflect.full.isSupertypeOf
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.full.starProjectedType
+import kotlin.reflect.jvm.isAccessible
 
 /**
  * Convert any object into JSON string
@@ -137,7 +139,12 @@ open class VertxWebException(message: String, val statusCode: Int = 500, vararg 
 class BadRequestException(message: String = "Bad Request", vararg args: StructuredArgument) :
     VertxWebException(message, 400, *args)
 
-class UnauthorizedException(message: String = "Unauthorized", val schema: String, val realm: String, vararg args: StructuredArgument) :
+class UnauthorizedException(
+    message: String = "Unauthorized",
+    val schema: String,
+    val realm: String,
+    vararg args: StructuredArgument
+) :
     VertxWebException(message, 401, *args)
 
 class ForbiddenException(message: String = "Forbidden", vararg args: StructuredArgument) :
@@ -173,14 +180,14 @@ open class CoroutineWebVerticle : CoroutineVerticle() {
     @Transient
     lateinit var server: HttpServer
 
-    @Transient
-    lateinit var router: Router
+    val router: Router by lazy {
+        Router.router(vertx)
+    }
 
     override suspend fun start() {
         log.info("Starting ${this.javaClass.name}...")
 
         server = vertx.createHttpServer()
-        router = Router.router(vertx)
         router.route()
             .handler(LogstashLoggerHandler())
             .handler(BodyHandler.create())
@@ -273,4 +280,22 @@ inline fun <reified T : Annotation> KFunction<*>.getAnnotation(ann: KClass<T>): 
         it is T
     } as? T
 }
+
+fun setProperty(instance: Any, prop: KMutableProperty1<Any, Any?>, value: Any?) {
+    prop.isAccessible = true
+    prop.set(instance, value)
+}
+
+fun injectProperty(target: Any, obj: Any, name: String = "") {
+    // Inject property
+    target::class.memberProperties
+        .filterIsInstance<KMutableProperty<*>>()
+        .firstOrNull {
+            it.returnType.isSupertypeOf(obj::class.starProjectedType) && (name.isBlank() || it.name == name)
+        }?.let {
+            @Suppress("UNCHECKED_CAST")
+            setProperty(target, it as KMutableProperty1<Any, Any?>, obj)
+        }
+}
+
 

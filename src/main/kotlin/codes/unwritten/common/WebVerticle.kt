@@ -1,153 +1,56 @@
 package codes.unwritten.common
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect
-import com.fasterxml.jackson.annotation.PropertyAccessor
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import io.vertx.core.Vertx
-import io.vertx.ext.web.Router
-import io.vertx.ext.web.RoutingContext
-import kotlin.reflect.*
-import kotlin.reflect.full.*
-import kotlin.reflect.jvm.isAccessible
-import kotlin.reflect.jvm.jvmErasure
+import net.logstash.logback.argument.StructuredArguments
 
-open class WebVerticle : CoroutineWebVerticle() {
-    private val authProviders: MutableMap<KClass<out AuthProvider>, AuthProvider> =
-        mutableMapOf(NoAuth::class to NoAuth())
+open class WebVerticle(portKey: String = "") : CoroutineWebVerticle() {
+    private var portKey: String = ""
+    private var listeningPort: Int = 0
 
-    private fun setProperty(instance: Any, prop: KMutableProperty1<Any, Any?>, value: Any?) {
-        prop.isAccessible = true
-        prop.set(instance, value)
+    private val handlers: MutableList<RouteHandler> = mutableListOf()
+
+    init {
+        this.portKey = portKey
+        this.listeningPort = 0
     }
 
-    private var authProvider: AuthProvider? = null
-
-    private suspend fun createAuthProvider(type: KClass<out AuthProvider>, configKey: String): AuthProvider {
-        val auth = if (configKey.isNotBlank())
-            config.getJsonObject(configKey).mapTo(type.javaObjectType)
-        else
-            type.createInstance()   // Use default constructor
-        // Inject Vertx instance if needed
-        auth::class.memberProperties
-            .filterIsInstance<KMutableProperty<*>>()
-            .firstOrNull {
-                it.returnType.isSubtypeOf(Vertx::class.starProjectedType) && it.name == "vertx"
-            }?.let {
-                @Suppress("UNCHECKED_CAST")
-                setProperty(auth, it as KMutableProperty1<Any, Any?>, vertx)
-            }
-        auth.init()
-        return auth
+    constructor(listeningPort: Int) : this() {
+        this.portKey = ""
+        this.listeningPort = listeningPort
     }
 
-    private fun findAuthProvider(klass: KClass<out AuthProvider>): AuthProvider? {
-        return authProviders.toList().firstOrNull {
-            it.first.starProjectedType.isSubtypeOf(klass.starProjectedType)
-        }?.second
+    fun addController(controller: Any, root: String = ""): WebVerticle {
+        handlers.add(RouteHandler(controller, root))
+        return this
+    }
+
+    private fun getPort(): Int {
+        if (listeningPort != 0) return listeningPort
+        return if (portKey.isBlank()) {
+            System.getenv("HTTP_PLATFORM_PORT")?.toInt() ?: config.getInteger("http.port", 8080)
+        } else {
+            System.getenv("HTTP_PLATFORM_PORT")?.toInt() ?: config.getInteger(portKey, 8080)
+        }
     }
 
     override suspend fun start() {
         super.start()
-        this::class.getAnnotation(Auth::class)?.let {
-            val provider = createAuthProvider(it.providerType, it.configKey)
-            authProviders.putIfAbsent(it.providerType, provider)
-            authProvider = provider
-        }
-        scanHandlers(router)
-    }
 
-    private suspend fun scanHandlers(router: Router) {
-        val klass = this::class
-        klass.memberFunctions.filter {
-            !it.returnType.isMarkedNullable
-        }.forEach { func ->
-            func.getAnnotation(Auth::class)?.let {
-                authProviders.putIfAbsent(it.providerType, createAuthProvider(it.providerType, it.configKey))
-            }
-            func.getAnnotation(Request::class)?.let {
-                router.route(it.method, it.path).coroHandler { context ->
-                    invokeHandler(context, func)
-                }
-            }
+        // Setup route handlers
+        handlers.forEach { setupRouteHandler(it) }
+
+        // Start listening
+        getPort().let {
+            server.requestHandler(router).listen(it)
+            log.info(
+                "MainVerticle started listening on port $it.", StructuredArguments.keyValue("listening_port", it)
+            )
         }
     }
 
-    private fun castParam(input: String, param: KParameter): Any? {
-        return mapper.convertValue(input, param.type.jvmErasure.java)
-    }
-
-    private fun castParam(input: List<String>, param: KParameter): Any? {
-        return try {
-            mapper.convertValue(input, param.type.jvmErasure.java)
-        } catch (e: IllegalArgumentException) {
-            try {
-                mapper.convertValue(input.last(), param.type.jvmErasure.java)
-            } catch (e: IllegalArgumentException) {
-                throw e
-            }
-        }
-    }
-
-    private suspend fun invokeHandler(context: RoutingContext, func: KFunction<*>): Any {
-        val authClass =
-            (func.annotations.firstOrNull { it is Auth } as? Auth)?.providerType
-                ?: if (authProvider == null) NoAuth::class else authProvider!!::class
-        val authProvider = authProviders[authClass] ?: throw ForbiddenException()
-        val userPrincipal = authProvider.auth(context)
-
-        val paramMap: Map<KParameter, Any?> = func.parameters.mapNotNull { param ->
-            (param.getAnnotation(PathParam::class)?.name?.let { name ->
-                // Param is PathParam
-                if (name.isBlank()) {
-                    param to castParam(context.pathParam(param.name), param)
-                } else {
-                    param to castParam(context.pathParam(name), param)
-                }
-            }) ?: (param.getAnnotation(QueryParam::class)?.name?.let { name ->
-                // Param is QueryParam
-                if (name.isBlank()) {
-                    param to castParam(context.queryParam(param.name), param)
-                } else {
-                    param to castParam(context.queryParam(name), param)
-                }
-            }) ?: (param.getAnnotation(FromBody::class)?.let {
-                // Param is in body
-                param to context.bodyAsJson.mapTo(param.type.jvmErasure.java)
-            }) ?: if (param.kind == KParameter.Kind.INSTANCE) {
-                // Param is this
-                param to this
-            } else if (param.type.jvmErasure.isSubclassOf(UserPrincipal::class)) {
-                // Param is the Credential
-                param to userPrincipal
-            } else if (param.type.jvmErasure.isSubclassOf(RoutingContext::class)) {
-                // Param is the RoutingContext
-                param to context
-            } else if (context.pathParams().containsKey(param.name)) {
-                // No annotation, search for path param first
-                param to castParam(context.pathParam(param.name), param)
-            } else if (!context.queryParams().contains(param.name)) {
-                // Then query params
-                param to castParam(context.queryParam(param.name), param)
-            } else {
-                if (param.isOptional) {
-                    // Optional param
-                    null
-                } else {
-                    // Unknown param
-                    throw BadRequestException("Bad request")
-                }
-            }
-        }.toMap()
-        return func.callSuspendBy(paramMap)!!
-    }
-
-    fun getAuthProvider(klass: KClass<out AuthProvider>): AuthProvider? {
-        return authProviders[klass]
-    }
-
-    companion object {
-        val mapper: ObjectMapper = ObjectMapper().registerModule(KotlinModule())
-            .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
+    private suspend fun setupRouteHandler(r: RouteHandler) {
+        injectProperty(r, vertx, "vertx")
+        injectProperty(r, router, "router")
+        injectProperty(r, config, "config")
+        r.init()
     }
 }

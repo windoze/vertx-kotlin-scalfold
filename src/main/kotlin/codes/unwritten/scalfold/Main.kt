@@ -14,18 +14,17 @@ import io.vertx.core.json.jackson.DatabindCodec
 import io.vertx.core.logging.LoggerFactory.LOGGER_DELEGATE_FACTORY_CLASS_NAME
 import io.vertx.core.logging.SLF4JLogDelegateFactory
 import io.vertx.ext.web.RoutingContext
-import net.logstash.logback.argument.StructuredArguments.keyValue
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 @Auth(AADAuth::class, configKey = "aadauth")
-class MainVerticle : WebVerticle() {
-    override suspend fun start() {
-        super.start()
+class MainController {
+    @Transient
+    private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
-        val port = System.getenv("HTTP_PLATFORM_PORT")?.toInt() ?: config.getInteger("http.port", 8080)
-        server.requestHandler(router).listen(port)
-
-        log.info("MainVerticle started listening on port $port.", keyValue("listening_port", port))
+    // Called before start
+    fun init() {
+        log.info("MainController initialized.")
     }
 
     // Fallback to class auth
@@ -78,6 +77,13 @@ class MainVerticle : WebVerticle() {
     }
 }
 
+class WorldController {
+    @Request(method = HttpMethod.GET, path = "/world/:user")
+    suspend fun world(@PathParam("user") user: String): String {
+        return "World $user"
+    }
+}
+
 class AppArgs(parser: ArgParser) {
     val conf by parser.storing("-c", "--conf", help = "config file name").default("config.json")
     val debug by parser.flagging("-d", "--debug", help = "show all debug logs").default(false)
@@ -116,7 +122,10 @@ fun main(args: Array<String>) = mainBody {
             JsonObject()
         }
 
-        vertx.deploy(MainVerticle(), config)
+        vertx.deploy(WebVerticle()
+            .addController(MainController())
+            .addController(WorldController(), "/w"),
+            config)
 
         log.info("Application started.")
     }

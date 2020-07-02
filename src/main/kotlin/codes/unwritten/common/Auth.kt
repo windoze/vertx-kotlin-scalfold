@@ -40,6 +40,20 @@ interface UserPrincipal
 class Anonymous : UserPrincipal
 
 /**
+ * Represent a user principal with name
+ */
+interface UserPrincipalWithName : UserPrincipal {
+    val name: String
+}
+
+/**
+ * Represent a user principal with user name
+ */
+interface UserPrincipalWithUserName : UserPrincipal {
+    val username: String
+}
+
+/**
  * Provide auth function
  */
 interface AuthProvider {
@@ -69,9 +83,9 @@ class NoAuth : AuthProvider {
  * @param password Password extracted from HTTP Basic Auth header
  */
 class BasicAuthUserPrincipal(
-    val username: String = "",
+    override val username: String = "",
     val password: String = ""
-) : UserPrincipal
+) : UserPrincipalWithUserName
 
 /**
  * HTTP Basic Auth provider
@@ -99,7 +113,7 @@ class BasicAuth : AuthProvider {
                 throw ForbiddenException()
             }
             val decoded = Base64.getDecoder().decode(value).decodeToString()
-            val (username, password) = decoded.toString().split(':', limit = 2)
+            val (username, password) = decoded.split(':', limit = 2)
             val user = BasicAuthUserPrincipal(username, password)
             if (!userPassStore.verifyUser(user)) throw ForbiddenException()
             return user
@@ -118,7 +132,7 @@ enum class AADUserPrincipalType {
  * AzureAD User Principal, can be an AAD user or an AAP Application
  * @param type principal type
  * @param name name of the AAD User, empty if it's an application principal
- * @param preferredUsername user name of the AAD User, empty if it's an application principal
+ * @param username user name of the AAD User, empty if it's an application principal
  * @param appId AAD Application id, empty if it's an user principal
  * @param issuedAt Time of the token was issued
  * @param notBefore the token is not valid before this time
@@ -126,13 +140,13 @@ enum class AADUserPrincipalType {
  */
 class AADUserPrincipal(
     val type: AADUserPrincipalType,
-    val name: String,
-    val preferredUsername: String,
+    override val name: String,
+    override val username: String,
     val appId: String,
     val issuedAt: Instant = Instant.EPOCH,
     val notBefore: Instant = Instant.EPOCH,
     val expiration: Instant = Instant.EPOCH
-) : UserPrincipal
+) : UserPrincipalWithName, UserPrincipalWithUserName
 
 /**
  * AAD Auth Provider
@@ -145,12 +159,34 @@ open class AADAuth : AuthProvider {
     protected lateinit var vertx: Vertx
     protected val client by lazy { WebClient.create(vertx) }
 
+    /**
+     * AAD authority
+     */
     val authority: String = "https://login.microsoftonline.com/common"
+
+    /**
+     * Audience
+     */
     val audience: String = ""
+
+    /**
+     * AAD Tenant name or UUID, i.e. "contoso.com"
+     */
     val tenantId: String = ""
+
+    /**
+     * AAD AppId
+     */
     val appId: String = ""
+
+    /**
+     * AAD App Security
+     */
     val secret: String = ""
 
+    /**
+     * AppId in this list is authorized
+     */
     val appIdAllowedList: List<String> = listOf()
 
     @Transient
@@ -195,7 +231,7 @@ open class AADAuth : AuthProvider {
                     )
                     val certStream = ByteArrayInputStream(buffer)
                     val cert = CertificateFactory.getInstance("X.509").generateCertificate(certStream)
-                    val key = cert.getPublicKey() as RSAPublicKey
+                    val key = cert.publicKey as RSAPublicKey
                     it.getString("kid") to key
                 }
                 .toMap()
@@ -273,7 +309,7 @@ open class AADAuth : AuthProvider {
                         return AADUserPrincipal(
                             type = AADUserPrincipalType.APP,
                             name = "",
-                            preferredUsername = "",
+                            username = "",
                             appId = appId,
                             issuedAt = issuedAt,
                             notBefore = notBefore,
@@ -286,7 +322,7 @@ open class AADAuth : AuthProvider {
             return AADUserPrincipal(
                 type = AADUserPrincipalType.USER,
                 name = decoded.getString("name", ""),
-                preferredUsername = preferredUsername,
+                username = preferredUsername,
                 appId = "",
                 issuedAt = issuedAt,
                 notBefore = notBefore,
@@ -306,6 +342,9 @@ class AADSecurityGroupAuth : AADAuth() {
     @Transient
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
+    /**
+     * Allowed security groups, only user in these group can be authorized
+     */
     val securityGroups: List<String> = listOf()
 
     @Transient
@@ -356,7 +395,7 @@ class AADSecurityGroupAuth : AADAuth() {
         }
 
         // Check is the user is in the security group
-        val groups = groupCache[userPrincipal.preferredUsername].await()
+        val groups = groupCache[userPrincipal.username].await()
         if (groups.isEmpty()) {
             throw ForbiddenException()
         }

@@ -39,7 +39,7 @@ class MainController {
     // Explicit auth, user info taken from injected AADUserPrincipal param
     @GET(path = "/hello")
     @Auth(AADAuth::class)
-    suspend fun hello(user: AADUserPrincipal): String {
+    suspend fun hello(user: UserPrincipalWithName): String {
         return "Hello, ${user.name}."
     }
 
@@ -75,7 +75,7 @@ class MainController {
     // Different auth type
     @Auth(BasicAuth::class, configKey = "auth")
     @GET("/hello5/:user")
-    suspend fun hello5(user: Int, p: BasicAuthUserPrincipal, ctx: RoutingContext): String {
+    suspend fun hello5(user: Int, p: UserPrincipalWithUserName, ctx: RoutingContext): String {
         return "Hello5 ${p.username} $user"
     }
 }
@@ -151,10 +151,12 @@ fun main(args: Array<String>) = mainBody {
         }
 
         // Add 2 controllers, 2nd is mounted under `/w`
-        vertx.deploy(WebVerticle()
-            .addController(MainController())
-            .addController(WorldController(), "/w"),
-            config)
+        vertx.deploy(
+            WebVerticle()
+                .addController(MainController())
+                .addController(WorldController(), "/w"),
+            config
+        )
 
         log.info("Application started.")
     }

@@ -13,42 +13,14 @@ import io.vertx.core.eventbus.DeliveryOptions
 import io.vertx.core.eventbus.Message
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.lang.reflect.Field
-import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-
-fun disableWarning() {
-    try {
-        val unsafeClass = Class.forName("sun.misc.Unsafe")
-        val field = unsafeClass.getDeclaredField("theUnsafe")
-        field.isAccessible = true
-        val unsafe = field[null]
-
-        val putObjectVolatile: Method = unsafeClass.getDeclaredMethod(
-            "putObjectVolatile",
-            Any::class.java,
-            Long::class.javaPrimitiveType,
-            Any::class.java
-        )
-        val staticFieldOffset: Method =
-            unsafeClass.getDeclaredMethod("staticFieldOffset", Field::class.java)
-
-        val loggerClass = Class.forName("jdk.internal.module.IllegalAccessLogger")
-        val loggerField = loggerClass.getDeclaredField("logger")
-        putObjectVolatile.invoke(unsafe, loggerClass, staticFieldOffset.invoke(unsafe, loggerField), null)
-    } catch (e: java.lang.Exception) {
-        // ignore
-    }
-}
-
 // TODO: Register parameter and return type on the fly and disable this, for security concerns
 private val kryo = Kryo().apply {
-//    disableWarning()
     isRegistrationRequired = false
 }
 

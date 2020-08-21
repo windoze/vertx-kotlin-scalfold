@@ -80,6 +80,16 @@ class MainController {
     }
 }
 
+interface SomeService {
+    suspend fun hello(user: String): String
+}
+
+class SomeServiceImpl : SomeService {
+    override suspend fun hello(user: String): String {
+        return "Hello, $user."
+    }
+}
+
 class WorldController {
     // Will be injected before starting serving
     lateinit var vertx: Vertx

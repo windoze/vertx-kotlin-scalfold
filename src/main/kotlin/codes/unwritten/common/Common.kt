@@ -21,6 +21,7 @@ import io.vertx.ext.web.codec.BodyCodec
 import io.vertx.ext.web.handler.BodyHandler
 import io.vertx.ext.web.handler.CorsHandler
 import io.vertx.ext.web.handler.StaticHandler
+import io.vertx.kotlin.core.deployVerticleAwait
 import io.vertx.kotlin.coroutines.CoroutineVerticle
 import io.vertx.kotlin.coroutines.awaitResult
 import io.vertx.kotlin.coroutines.dispatcher
@@ -31,6 +32,7 @@ import net.logstash.logback.argument.StructuredArgument
 import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import sun.misc.Unsafe
 import kotlin.reflect.*
 import kotlin.reflect.full.isSupertypeOf
 import kotlin.reflect.full.memberProperties
@@ -113,11 +115,27 @@ inline fun <reified T> HttpRequest<Buffer>.bodyCodec(): HttpRequest<T> {
     return `as`(BodyCodec.json(T::class.java))
 }
 
-inline fun <reified T : Verticle> Vertx.deploy(v: T, config: JsonObject) {
+inline fun <reified T : Verticle> Vertx.deploy(v: T, config: JsonObject = JsonObject()) {
     val log = LoggerFactory.getLogger(this.javaClass)
     try {
         log.info("Deploying ${T::class.java.simpleName}...")
         deployVerticle(v, DeploymentOptions().setConfig(config))
+        log.info("${T::class.java.simpleName} deployed.")
+    } catch (e: Throwable) {
+        log.error(
+            "Failed to deploy ${T::class.java.simpleName}, error is ${e::class.simpleName}(${e.message}).",
+            kv("type", e::class.simpleName),
+            kv("error", e.message)
+        )
+        throw e
+    }
+}
+
+suspend inline fun <reified T : Verticle> Vertx.deployAwait(v: T, config: JsonObject = JsonObject()) {
+    val log = LoggerFactory.getLogger(this.javaClass)
+    try {
+        log.info("Deploying ${T::class.java.simpleName}...")
+        deployVerticleAwait(v, DeploymentOptions().setConfig(config))
         log.info("${T::class.java.simpleName} deployed.")
     } catch (e: Throwable) {
         log.error(
@@ -297,5 +315,3 @@ fun injectProperty(target: Any, obj: Any, name: String = "") {
             setProperty(target, it as KMutableProperty1<Any, Any?>, obj)
         }
 }
-
-

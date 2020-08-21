@@ -1,6 +1,7 @@
 package codes.unwritten.common
 
 import io.vertx.core.Vertx
+import io.vertx.core.eventbus.ReplyException
 import io.vertx.core.json.JsonObject
 import io.vertx.core.json.jackson.DatabindCodec
 import io.vertx.ext.web.Route
@@ -195,7 +196,12 @@ class RouteHandler(private val controller: Any, private val root: String) : Coro
                     handler(it)
                 } catch (e: VertxWebException) {
                     it.response().setStatusCode(e.statusCode).setStatusMessage(e.message).end()
+                } catch (e: ReplyException) {
+                    it.response().setStatusCode(if (e.failureCode() in 400..599) e.failureCode() else 500)
+                        .setStatusMessage(e.message ?: "Unknown message").end()
                 } catch (e: Throwable) {
+                    log.error("Uncaught exception $e")
+                    e.printStackTrace()
                     it.response().internalError(e.message ?: "Internal error")
                 }
             }
